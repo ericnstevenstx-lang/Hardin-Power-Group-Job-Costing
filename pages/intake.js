@@ -1,4 +1,3 @@
-import { upload } from '@vercel/blob/client';
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabase';
@@ -70,7 +69,7 @@ export default function DrawingIntakePage() {
   const router = useRouter();
   const fileRef = useRef();
   const [image, setImage] = useState(null);
-  const [rawFile, setRawFile] = useState(null);
+  const [imageData, setImageData] = useState(null);
   const [fileType, setFileType] = useState('image');
   const [productType, setProductType] = useState('spider-box');
   const [parsing, setParsing] = useState(false);
@@ -84,32 +83,66 @@ export default function DrawingIntakePage() {
   const [creating, setCreating] = useState(false);
   const [notes, setNotes] = useState('');
 
-  function handleFile(e) {
+  async function renderPdfPage(arrayBuffer) {
+    if (!window.pdfjsLib) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    return dataUrl.split(',')[1];
+  }
+
+  async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const isPdf = file.type === 'application/pdf';
-    setFileType(isPdf ? 'pdf' : 'image');
-    setImage(isPdf ? null : URL.createObjectURL(file));
-    setRawFile(file);
     setResult(null);
     setError('');
+    if (file.type === 'application/pdf') {
+      setFileType('image');
+      setImage(null);
+      setImageData(null);
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = await renderPdfPage(arrayBuffer);
+        setImageData(base64);
+        setImage('data:image/jpeg;base64,' + base64);
+      } catch (err) {
+        setError('PDF render failed: ' + err.message);
+      }
+    } else {
+      setFileType('image');
+      setImage(URL.createObjectURL(file));
+      const reader = new FileReader();
+      reader.onload = ev => setImageData(ev.target.result.split(',')[1]);
+      reader.readAsDataURL(file);
+    }
   }
 
   async function parseDrawing() {
-    if (!rawFile) return setError('Upload a file first.');
+    if (!imageData) return setError('Upload a file first.');
     setParsing(true);
     setError('');
     setResult(null);
     try {
-      const blob = await upload(rawFile.name, rawFile, {
-        access: 'public',
-        handleUploadUrl: '/api/blob-token',
-      });
       const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          blobUrl: blob.url,
+          imageData,
           fileType,
           productLabel: PRODUCT_LABELS[productType],
         })
@@ -231,15 +264,15 @@ export default function DrawingIntakePage() {
               <option value="temp-skid">Temp Power Skid Frame</option>
             </select>
           </div>
-          <div onClick={() => fileRef.current.click()} style={{ border: '1px dashed var(--color-border-secondary)', borderRadius: 8, padding: 24, textAlign: 'center', cursor: 'pointer', marginBottom: 12, minHeight: 120, background: (image || rawFile) ? 'transparent' : 'var(--color-background-secondary)' }}>
+          <div onClick={() => fileRef.current.click()} style={{ border: '1px dashed var(--color-border-secondary)', borderRadius: 8, padding: 24, textAlign: 'center', cursor: 'pointer', marginBottom: 12, minHeight: 120, background: (image || imageData) ? 'transparent' : 'var(--color-background-secondary)' }}>
             {image
               ? <img src={image} alt="Drawing" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 4 }} />
-              : rawFile && fileType === 'pdf'
+              : false
               ? <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>PDF loaded — ready to extract</div>
               : <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Tap to upload drawing<br /><span style={{ fontSize: 11 }}>JPG, PNG, screenshot, or PDF</span></div>}
           </div>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} style={{ display: 'none' }} />
-          <button className="primary" onClick={parseDrawing} disabled={!rawFile || parsing} style={{ width: '100%' }}>
+          <button className="primary" onClick={parseDrawing} disabled={!imageData || parsing} style={{ width: '100%' }}>
             {parsing ? 'Extracting frame BOM...' : 'Extract frame BOM from drawing'}
           </button>
           <div style={{ marginTop: 10, fontSize: 11, color: 'var(--color-text-tertiary)' }}>Frame materials only. Electrical components added in step 4.</div>
@@ -374,7 +407,7 @@ export default function DrawingIntakePage() {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="primary" onClick={createJob} disabled={creating}>{creating ? 'Creating job...' : '→ Confirm + create job'}</button>
-              <button onClick={() => { setResult(null); setImage(null); setRawFile(null); setEditBom([]); setComponents([]); }}>Start over</button>
+              <button onClick={() => { setResult(null); setImage(null); setImageData(null); setEditBom([]); setComponents([]); }}>Start over</button>
             </div>
           </div>
         </>
