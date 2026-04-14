@@ -28,9 +28,9 @@ Extract ALL dimensional data and return ONLY valid JSON in this exact structure:
 }
 
 MATERIAL RATES (use exactly):
-- SQ Tube 1-1/2" 11GA: $3.00/ft — spider box frame only
-- SQ Tube 2" 11GA: $4.00/ft — charging station and temp skid frames
-- Rec Tube 6x3 11GA: $9.32/ft — fork pockets
+- SQ Tube 1-1/2" 11GA: $3.00/ft -- spider box frame only
+- SQ Tube 2" 11GA: $4.00/ft -- charging station and temp skid frames
+- Rec Tube 6x3 11GA: $9.32/ft -- fork pockets
 - Caster 6"x2" Poly Swivel w/Brake: $45.51/ea
 - Caster 6"x2" Poly Rigid: $29.99/ea
 - Powder Coat Polyester TGIC Gloss: $18.00/lb
@@ -47,28 +47,24 @@ TEMP SKID FRAME defaults: variable size, 2"x2" 11GA for all members, 6x3 rec tub
 
 Convert all inch measurements to decimal feet for qty. Return ONLY the JSON object, no markdown, no preamble.`;
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { blobUrl, fileType, productLabel } = req.body;
-  if (!blobUrl) return res.status(400).json({ error: 'No blobUrl provided.' });
+  const { imageData, fileType, productLabel } = req.body;
+  if (!imageData) return res.status(400).json({ error: 'No image data provided.' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured.' });
 
-  let fileBuffer;
-  try {
-    const blobRes = await fetch(blobUrl);
-    if (!blobRes.ok) throw new Error('Blob fetch failed: ' + blobRes.status);
-    fileBuffer = Buffer.from(await blobRes.arrayBuffer());
-  } catch (err) {
-    return res.status(502).json({ error: 'Failed to fetch file from storage: ' + err.message });
-  }
-
-  const fileBase64 = fileBuffer.toString('base64');
-  const contentBlock = fileType === 'pdf'
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } }
-    : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fileBase64 } };
+  const contentBlock = { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } };
 
   let upstream;
   try {
