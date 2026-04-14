@@ -15,7 +15,7 @@ Extract ALL dimensional data and return ONLY valid JSON in this exact structure:
   "bom": [
     {
       "mat_name": "SQ Tube",
-      "mat_spec": "2\\" 11GA",
+      "mat_spec": "2\" 11GA",
       "qty": 23.5,
       "unit": "ft",
       "unit_cost": 4.00,
@@ -50,15 +50,25 @@ Convert all inch measurements to decimal feet for qty. Return ONLY the JSON obje
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { imageData, fileType, productLabel } = req.body;
-  if (!imageData) return res.status(400).json({ error: 'No image data provided.' });
+  const { blobUrl, fileType, productLabel } = req.body;
+  if (!blobUrl) return res.status(400).json({ error: 'No blobUrl provided.' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured.' });
 
+  let fileBuffer;
+  try {
+    const blobRes = await fetch(blobUrl);
+    if (!blobRes.ok) throw new Error('Blob fetch failed: ' + blobRes.status);
+    fileBuffer = Buffer.from(await blobRes.arrayBuffer());
+  } catch (err) {
+    return res.status(502).json({ error: 'Failed to fetch file from storage: ' + err.message });
+  }
+
+  const fileBase64 = fileBuffer.toString('base64');
   const contentBlock = fileType === 'pdf'
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageData } }
-    : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } };
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 } }
+    : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: fileBase64 } };
 
   let upstream;
   try {
@@ -77,7 +87,7 @@ export default async function handler(req, res) {
           role: 'user',
           content: [
             contentBlock,
-            { type: 'text', text: `Extract the frame BOM from this ${productLabel} drawing. Return only the JSON.` }
+            { type: 'text', text: 'Extract the frame BOM from this ' + productLabel + ' drawing. Return only the JSON.' }
           ]
         }]
       })
