@@ -70,6 +70,7 @@ export default function DrawingIntakePage() {
   const fileRef = useRef();
   const [image, setImage] = useState(null);
   const [imageData, setImageData] = useState(null);
+  const [fileType, setFileType] = useState('image');
   const [productType, setProductType] = useState('spider-box');
   const [parsing, setParsing] = useState(false);
   const [result, setResult] = useState(null);
@@ -85,7 +86,9 @@ export default function DrawingIntakePage() {
   function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setImage(URL.createObjectURL(file));
+    const isPdf = file.type === 'application/pdf';
+    setFileType(isPdf ? 'pdf' : 'image');
+    setImage(isPdf ? null : URL.createObjectURL(file));
     setResult(null);
     setError('');
     const reader = new FileReader();
@@ -109,7 +112,9 @@ export default function DrawingIntakePage() {
           messages: [{
             role: 'user',
             content: [
-              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
+              fileType === 'pdf'
+                ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageData } }
+                : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
               { type: 'text', text: `Extract the frame BOM from this ${PRODUCT_LABELS[productType]} drawing. Return only the JSON.` }
             ]
           }]
@@ -231,10 +236,14 @@ export default function DrawingIntakePage() {
               <option value="temp-skid">Temp Power Skid Frame</option>
             </select>
           </div>
-          <div onClick={() => fileRef.current.click()} style={{ border: '1px dashed var(--color-border-secondary)', borderRadius: 8, padding: 24, textAlign: 'center', cursor: 'pointer', marginBottom: 12, minHeight: 120, background: image ? 'transparent' : 'var(--color-background-secondary)' }}>
-            {image ? <img src={image} alt="Drawing" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 4 }} /> : <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Tap to upload drawing photo<br /><span style={{ fontSize: 11 }}>JPG, PNG, screenshot</span></div>}
+          <div onClick={() => fileRef.current.click()} style={{ border: '1px dashed var(--color-border-secondary)', borderRadius: 8, padding: 24, textAlign: 'center', cursor: 'pointer', marginBottom: 12, minHeight: 120, background: (image || imageData) ? 'transparent' : 'var(--color-background-secondary)' }}>
+            {image
+              ? <img src={image} alt="Drawing" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 4 }} />
+              : imageData && fileType === 'pdf'
+              ? <div style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}>PDF loaded — ready to extract</div>
+              : <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Tap to upload drawing<br /><span style={{ fontSize: 11 }}>JPG, PNG, screenshot, or PDF</span></div>}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} />
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} style={{ display: 'none' }} />
           <button className="primary" onClick={parseDrawing} disabled={!imageData || parsing} style={{ width: '100%' }}>
             {parsing ? 'Extracting frame BOM...' : 'Extract frame BOM from drawing'}
           </button>
