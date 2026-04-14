@@ -16,7 +16,7 @@ const COMPONENT_PRESETS = {
   'spider-box': ['Spider box assembly','Outlet receptacles','GFCI breaker'],
 };
 
-const SYSTEM_PROMPT = `You are a fabrication BOM extraction engine for Hardin Power Group, Dallas TX.
+const _UNUSED = `You are a fabrication BOM extraction engine for Hardin Power Group, Dallas TX.
 You will be shown a hand-drawn or printed technical drawing of a Spider Box Rack, Charging Station Frame, or Temp Power Skid Frame.
 
 Extract ALL dimensional data and return ONLY valid JSON in this exact structure:
@@ -102,26 +102,18 @@ export default function DrawingIntakePage() {
     setError('');
     setResult(null);
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: 'user',
-            content: [
-              fileType === 'pdf'
-                ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: imageData } }
-                : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageData } },
-              { type: 'text', text: `Extract the frame BOM from this ${PRODUCT_LABELS[productType]} drawing. Return only the JSON.` }
-            ]
-          }]
+          imageData,
+          fileType,
+          productLabel: PRODUCT_LABELS[productType],
         })
       });
       const data = await res.json();
-      const raw = data.content?.find(b => b.type === 'text')?.text || '';
+      if (!res.ok) throw new Error(data.error || 'Extraction failed');
+      const raw = data.raw;
       const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
       setResult(parsed);
       setEditBom(parsed.bom || []);
