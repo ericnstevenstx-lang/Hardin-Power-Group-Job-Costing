@@ -8,12 +8,14 @@ const PRODUCT_LABELS = {
   'spider-box': 'Spider Box Rack',
   'charging-station': 'Charging Station Frame',
   'temp-skid': 'Temp Power Skid Frame',
+  'a-frame': 'A-Frame Panel Mount',
 };
 
 const COMPONENT_PRESETS = {
   'temp-skid': ['Transformer','Distribution panel','HV panel','LV panel','Disconnect switch','Meter socket','Main breaker','Bus bar','Cable tray'],
   'charging-station': ['EV charger unit','Distribution panel','Main breaker','Bus bar','Disconnect switch','Meter socket'],
   'spider-box': ['Spider box assembly','Outlet receptacles','GFCI breaker'],
+  'a-frame': ['Load center','Main breaker','Lifting eyes'],
 };
 
 const _UNUSED = `You are a fabrication BOM extraction engine for Hardin Power Group, Dallas TX.
@@ -262,6 +264,7 @@ export default function DrawingIntakePage() {
               <option value="spider-box">Spider Box Rack</option>
               <option value="charging-station">Charging Station Frame</option>
               <option value="temp-skid">Temp Power Skid Frame</option>
+              <option value="a-frame">A-Frame Panel Mount</option>
             </select>
           </div>
           <div onClick={() => fileRef.current.click()} style={{ border: '1px dashed var(--color-border-secondary)', borderRadius: 8, padding: 24, textAlign: 'center', cursor: 'pointer', marginBottom: 12, minHeight: 120, background: (image || imageData) ? 'transparent' : 'var(--color-background-secondary)' }}>
