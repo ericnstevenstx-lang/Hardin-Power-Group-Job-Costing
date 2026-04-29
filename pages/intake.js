@@ -210,44 +210,52 @@ export default function DrawingIntakePage() {
     if (!jobName.trim()) return setError('Enter a job name.');
     setCreating(true);
     setError('');
+    try {
+      // drawing intake record is optional — ignore errors if table schema differs
+      let intakeId = null;
+      try {
+        const { data: intake } = await supabase.from('wes_drawing_intake').insert({
+          product_type: productType,
+          raw_extraction: result || {},
+          confirmed_bom: editBom,
+          status: 'confirmed',
+        }).select().single();
+        intakeId = intake?.id || null;
+      } catch (_) {}
 
-    const { data: intake } = await supabase.from('wes_drawing_intake').insert({
-      product_type: productType,
-      raw_extraction: result || {},
-      confirmed_bom: editBom,
-      status: 'confirmed',
-      notes,
-    }).select().single();
+      const { data: job, error: jobErr } = await supabase.from('wes_jobs').insert({
+        name: jobName.trim(),
+        customer: jobCustomer.trim(),
+        date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
+        sell_price: 0,
+      }).select().single();
 
-    const { data: job, error: jobErr } = await supabase.from('wes_jobs').insert({
-      name: jobName.trim(),
-      customer: jobCustomer.trim(),
-      date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
-      sell_price: 0,
-    }).select().single();
+      if (jobErr) throw new Error(jobErr.message);
+      if (intakeId) await supabase.from('wes_drawing_intake').update({ job_id: job.id }).eq('id', intakeId);
 
-    if (jobErr) { setCreating(false); return setError(jobErr.message); }
-    await supabase.from('wes_drawing_intake').update({ job_id: job.id }).eq('id', intake.id);
+      const matRows = [];
+      for (const l of editBom) {
+        const { data: mat } = await supabase.from('wes_materials').select('id').eq('name', l.mat_name).eq('spec', l.mat_spec || '').maybeSingle();
+        matRows.push({ job_id: job.id, material_id: mat?.id || null, mat_name: l.mat_name, mat_spec: l.mat_spec || '', unit: l.unit, unit_cost: l.unit_cost, qty: l.qty });
+      }
+      if (matRows.length) await supabase.from('wes_job_materials').insert(matRows);
 
-    const matRows = [];
-    for (const l of editBom) {
-      const { data: mat } = await supabase.from('wes_materials').select('id').eq('name', l.mat_name).eq('spec', l.mat_spec || '').maybeSingle();
-      matRows.push({ job_id: job.id, material_id: mat?.id || null, mat_name: l.mat_name, mat_spec: l.mat_spec || '', unit: l.unit, unit_cost: l.unit_cost, qty: l.qty });
+      if (result?.labor_hours) {
+        await supabase.from('wes_job_labor').insert({ job_id: job.id, description: 'Fabrication', hours: result.labor_hours, rate: 30 });
+        await supabase.from('wes_job_materials').insert({ job_id: job.id, material_id: null, mat_name: 'Consumables', mat_spec: 'MIG wire, gas, grinder wheels, tips', unit: 'hr', unit_cost: 5, qty: result.labor_hours });
+      }
+
+      if (components.length) {
+        const compRows = components.map(c => ({ job_id: job.id, description: c.description, qty: c.qty, unit_cost: c.unit_cost }));
+        await supabase.from('wes_job_components').insert(compRows);
+      }
+
+      router.push('/jobs/' + job.id);
+    } catch (err) {
+      setError(err.message || 'Failed to create job.');
+    } finally {
+      setCreating(false);
     }
-    if (matRows.length) await supabase.from('wes_job_materials').insert(matRows);
-
-    if (result?.labor_hours) {
-      await supabase.from('wes_job_labor').insert({ job_id: job.id, description: 'Fabrication', hours: result.labor_hours, rate: 30 });
-      await supabase.from('wes_job_materials').insert({ job_id: job.id, material_id: null, mat_name: 'Consumables', mat_spec: 'MIG wire, gas, grinder wheels, tips', unit: 'hr', unit_cost: 5, qty: result.labor_hours });
-    }
-
-    if (components.length) {
-      const compRows = components.map(c => ({ job_id: job.id, description: c.description, qty: c.qty, unit_cost: c.unit_cost }));
-      await supabase.from('wes_job_components').insert(compRows);
-    }
-
-    setCreating(false);
-    router.push('/jobs/' + job.id);
   }
 
   const presets = COMPONENT_PRESETS[productType] || [];
@@ -298,7 +306,27 @@ export default function DrawingIntakePage() {
             ))}
           </tbody>
         </table>
-        <div className="total">TOTAL MATERIAL: ${editBom.reduce((s, r) => s + Number(r.line_total || 0), 0).toFixed(2)}</div>
+        {components.length > 0 && <>
+          <div style={{ fontSize: 10, fontWeight: 600, margin: '10px 0 4px', borderTop: '1px solid #000', paddingTop: 6 }}>COMPONENTS / ELECTRICAL / MISC</div>
+          <table>
+            <thead><tr><th>Description</th><th>Qty</th><th>Unit $</th><th>Line $</th></tr></thead>
+            <tbody>
+              {components.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.description}</td>
+                  <td>{Number(r.qty)}</td>
+                  <td>${Number(r.unit_cost).toFixed(2)}</td>
+                  <td>${(Number(r.qty) * Number(r.unit_cost)).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>}
+        <div className="total">
+          FRAME MATERIAL: ${editBom.reduce((s, r) => s + Number(r.line_total || 0), 0).toFixed(2)}
+          {components.length > 0 && <> &nbsp;|&nbsp; COMPONENTS: ${components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0).toFixed(2)}</>}
+          &nbsp;|&nbsp; TOTAL: ${(editBom.reduce((s, r) => s + Number(r.line_total || 0), 0) + components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0)).toFixed(2)}
+        </div>
         <div className="footer">Generated by HPG Job Costing — Internal use only | Printed {new Date().toLocaleString()}</div>
       </div>
 
