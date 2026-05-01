@@ -120,22 +120,42 @@ export default function DrawingIntakePage() {
       renderedCanvases.push(canvas);
     }
 
-    // Stitch all rendered pages into one tall canvas
-    const totalWidth = Math.max(...renderedCanvases.map(c => c.width));
-    const totalHeight = renderedCanvases.reduce((s, c) => s + c.height + 4, 0);
+    // Arrange pages in a 2-column grid to keep height under Anthropic's 8000px limit
+    const colWidth = Math.max(...renderedCanvases.map(c => c.width));
+    const colCount = 2;
+    const rows = Math.ceil(renderedCanvases.length / colCount);
+    const rowHeights = [];
+    for (let r = 0; r < rows; r++) {
+      const rowPages = renderedCanvases.slice(r * colCount, r * colCount + colCount);
+      rowHeights.push(Math.max(...rowPages.map(c => c.height)));
+    }
+    const totalWidth = colWidth * colCount + 4;
+    const totalHeight = rowHeights.reduce((s, h) => s + h + 4, 0);
+
+    // Safety check: if still too tall, scale down
+    const MAX_DIM = 7800;
+    const scaleFactor = Math.min(1, MAX_DIM / totalHeight, MAX_DIM / totalWidth);
+
     const stitched = document.createElement('canvas');
-    stitched.width = totalWidth;
-    stitched.height = totalHeight;
+    stitched.width = Math.floor(totalWidth * scaleFactor);
+    stitched.height = Math.floor(totalHeight * scaleFactor);
     const ctx = stitched.getContext('2d');
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, totalWidth, totalHeight);
+    ctx.fillRect(0, 0, stitched.width, stitched.height);
+    ctx.scale(scaleFactor, scaleFactor);
+
     let y = 0;
-    for (const c of renderedCanvases) {
-      ctx.drawImage(c, 0, y);
-      y += c.height + 4;
+    for (let r = 0; r < rows; r++) {
+      const rowPages = renderedCanvases.slice(r * colCount, r * colCount + colCount);
+      let x = 0;
+      for (const pg of rowPages) {
+        ctx.drawImage(pg, x, y);
+        x += colWidth + 4;
+      }
+      y += rowHeights[r] + 4;
     }
 
-    const dataUrl = stitched.toDataURL('image/jpeg', 0.75);
+    const dataUrl = stitched.toDataURL('image/jpeg', 0.78);
     return dataUrl.split(',')[1];
   }
 
