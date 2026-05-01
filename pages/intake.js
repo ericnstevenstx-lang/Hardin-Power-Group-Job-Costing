@@ -108,7 +108,7 @@ export default function DrawingIntakePage() {
     if (numPages >= 4) pageNums.push(4);
     if (numPages >= 5) pageNums.push(5);
 
-    const SCALE = 2.0;
+    const SCALE = 1.5;
     const renderedCanvases = [];
     for (const num of pageNums) {
       const page = await pdf.getPage(num);
@@ -135,7 +135,7 @@ export default function DrawingIntakePage() {
       y += c.height + 4;
     }
 
-    const dataUrl = stitched.toDataURL('image/jpeg', 0.88);
+    const dataUrl = stitched.toDataURL('image/jpeg', 0.75);
     return dataUrl.split(',')[1];
   }
 
