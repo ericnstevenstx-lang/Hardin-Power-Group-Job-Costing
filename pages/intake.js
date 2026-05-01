@@ -99,13 +99,43 @@ export default function DrawingIntakePage() {
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
     const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2.5 });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const numPages = pdf.numPages;
+
+    // Always include page 1. For multi-sheet drawings also include pages 3,4,5
+    // where individual part dimensions live. Cap at actual page count.
+    const pageNums = [1];
+    if (numPages >= 3) pageNums.push(3);
+    if (numPages >= 4) pageNums.push(4);
+    if (numPages >= 5) pageNums.push(5);
+
+    const SCALE = 2.0;
+    const renderedCanvases = [];
+    for (const num of pageNums) {
+      const page = await pdf.getPage(num);
+      const viewport = page.getViewport({ scale: SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      renderedCanvases.push(canvas);
+    }
+
+    // Stitch all rendered pages into one tall canvas
+    const totalWidth = Math.max(...renderedCanvases.map(c => c.width));
+    const totalHeight = renderedCanvases.reduce((s, c) => s + c.height + 4, 0);
+    const stitched = document.createElement('canvas');
+    stitched.width = totalWidth;
+    stitched.height = totalHeight;
+    const ctx = stitched.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
+    let y = 0;
+    for (const c of renderedCanvases) {
+      ctx.drawImage(c, 0, y);
+      y += c.height + 4;
+    }
+
+    const dataUrl = stitched.toDataURL('image/jpeg', 0.88);
     return dataUrl.split(',')[1];
   }
 
@@ -235,7 +265,16 @@ export default function DrawingIntakePage() {
 
       const matRows = [];
       for (const l of editBom) {
-        const { data: mat } = await supabase.from('wes_materials').select('id').eq('name', l.mat_name).eq('spec', l.mat_spec || '').maybeSingle();
+        let { data: mat } = await supabase.from('wes_materials').select('id').eq('name', l.mat_name).eq('spec', l.mat_spec || '').maybeSingle();
+        if (!mat && l.mat_name) {
+          const { data: newMat } = await supabase.from('wes_materials').insert({
+            name: l.mat_name,
+            spec: l.mat_spec || '',
+            unit: l.unit || 'ea',
+            unit_cost: l.unit_cost || 0,
+          }).select('id').single();
+          mat = newMat;
+        }
         matRows.push({ job_id: job.id, material_id: mat?.id || null, mat_name: l.mat_name, mat_spec: l.mat_spec || '', unit: l.unit, unit_cost: l.unit_cost, qty: l.qty });
       }
       if (matRows.length) await supabase.from('wes_job_materials').insert(matRows);
