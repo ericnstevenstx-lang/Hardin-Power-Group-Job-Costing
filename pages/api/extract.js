@@ -51,19 +51,19 @@ Sheet metal is priced by WEIGHT, not by piece. Use these formulas:
 
 10 GA steel sheet (0.1345" thick, ASTM A36):
   weight_lbs = area_sq_in * 0.0382
-  cost = weight_lbs * 0.75   (rate: $75.00/cwt = $0.75/lb)
-  BOM line: mat_name="Sheet Steel", mat_spec="10 GA ASTM A36", unit="lbs", unit_cost=0.75
+  cost = weight_lbs * 0.95   (rate: $95.00/cwt = $0.95/lb — Dimco Steel verified)
+  BOM line: mat_name="Sheet Steel", mat_spec="10 GA ASTM A36", unit="lbs", unit_cost=0.95
   Sum ALL 10 GA pieces into one BOM line: total_area = sum of (qty * W * H) for each piece
 
 11 GA steel sheet (0.1196" thick):
   weight_lbs = area_sq_in * 0.0339
-  cost = weight_lbs * 0.75
+  cost = weight_lbs * 0.95
   BOM line: mat_spec="11 GA ASTM A36"
 
 16 GA steel sheet (0.0598" thick):
-  cost = $95.00 per 5x10 sheet (60" x 120" = 7200 sq in)
-  price_per_sq_in = 0.01319
-  BOM line: mat_name="Sheet Steel", mat_spec="16 GA ASTM A36", unit="lbs", unit_cost=0.75
+  cost = $84.00 per 4x8 sheet (48" x 96" = 4608 sq in, 78.15 lbs) — Dimco Steel verified
+  unit_cost = $1.075/lb
+  BOM line: mat_name="Sheet Steel", mat_spec="16 GA ASTM A36", unit="lbs", unit_cost=1.075
   weight_lbs = area_sq_in * 0.0170
 
 EXAMPLE — 10 GA panels:
@@ -71,18 +71,19 @@ EXAMPLE — 10 GA panels:
   P-10-1: qty 1, 50" x 38.25" = 1912.5 sq in
   total_area = 6091.5 sq in
   weight = 6091.5 * 0.0382 = 232.7 lbs
-  cost = 232.7 * 0.75 = $174.53
+  cost = 232.7 * 0.95 = $221.07
 
 Always create a separate BOM line for each gauge of sheet steel found in the drawing.
 
 === MATERIAL RATES ===
+- SQ Tube 1" x 1" 11GA: $1.90/ft (Dimco Steel verified 04/10/26)
 - SQ Tube 1-1/4" x 1-1/4": $2.50/ft
-- SQ Tube 1-1/2" x 1-1/2": $3.00/ft
+- SQ Tube 1-1/2" x 1-1/2" 11GA: $2.99/ft (Dimco Steel verified 04/03/26)
 - SQ Tube 2" x 2": $4.00/ft
 - Rec Tube 6x3 11GA: $9.32/ft
-- Sheet Steel 10 GA: $0.75/lb (0.0382 lb/sq in)
-- Sheet Steel 11 GA: $0.75/lb (0.0339 lb/sq in)
-- Sheet Steel 16 GA: $0.75/lb (0.0170 lb/sq in)
+- Sheet Steel 10 GA: $0.95/lb (Dimco Steel verified 04/14/26, $95.00/cwt) — weight formula: area_sq_in * 0.0382 lb/sq_in
+- Sheet Steel 11 GA: $0.95/lb — weight formula: area_sq_in * 0.0339 lb/sq_in
+- Sheet Steel 16 GA: $1.075/lb (Dimco Steel verified, $84.00 per 4x8 sheet = 78.15 lbs) — weight formula: area_sq_in * 0.0170 lb/sq_in
 - Angle 3/4x3/4x1/8: $90.00/cwt = $0.90/lb (0.59 lb/ft)
 - Angle 2x2x1/8: $90.00/cwt = $0.90/lb (1.44 lb/ft)
 - Caster 6"x2" Poly Swivel w/Brake: $45.51/ea
