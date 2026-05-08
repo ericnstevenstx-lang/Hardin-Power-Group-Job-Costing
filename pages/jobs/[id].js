@@ -30,7 +30,7 @@ export default function JobDetail() {
     setLoading(true);
     const [jobRes, matsRes, itemsRes, laborRes, compsRes] = await Promise.all([
       supabase.from('wes_jobs').select('*').eq('id', id).single(),
-      supabase.from('wes_materials').select('*').order('name'),
+      supabase.from('wes_materials_effective_cost').select('*').order('name').order('spec'),
       supabase.from('wes_job_materials').select('*').eq('job_id', id).order('created_at'),
       supabase.from('wes_job_labor').select('*').eq('job_id', id).order('created_at'),
       supabase.from('wes_job_components').select('*').eq('job_id', id).order('created_at'),
@@ -47,12 +47,22 @@ export default function JobDetail() {
 
   useEffect(() => { load(); }, [load]);
 
-  const matTotal = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
-  const laborTotal = labor.reduce((s, l) => s + l.hours * l.rate, 0);
-  const compTotal = components.reduce((s, c) => s + c.qty * c.unit_cost, 0);
+  const buildQty = Math.max(1, Number(job?.build_quantity) || 1);
+  const matPerBuild = items.reduce((s, i) => s + i.qty * i.unit_cost, 0);
+  const laborPerBuild = labor.reduce((s, l) => s + l.hours * l.rate, 0);
+  const compPerBuild = components.reduce((s, c) => s + c.qty * c.unit_cost, 0);
+  const matTotal = matPerBuild * buildQty;
+  const laborTotal = laborPerBuild * buildQty;
+  const compTotal = compPerBuild * buildQty;
   const total = matTotal + laborTotal + compTotal;
   const sp = parseFloat(sellPrice) || 0;
   const margin = sp > 0 ? ((sp - total) / sp * 100) : null;
+
+  async function updateBuildQuantity(val) {
+    const n = Math.max(1, parseInt(val, 10) || 1);
+    await supabase.from('wes_jobs').update({ build_quantity: n }).eq('id', id);
+    setJob(prev => ({ ...prev, build_quantity: n }));
+  }
 
   async function updateSellPrice(val) {
     setSellPrice(val);
@@ -68,7 +78,8 @@ export default function JobDetail() {
     if (!mat) return;
     setSaving(p => ({ ...p, mat: true }));
     setError('');
-    const row = { job_id: id, material_id: mat.id, mat_name: mat.name, mat_spec: mat.spec, unit: mat.unit, unit_cost: mat.cost, qty: parseFloat(matForm.qty) };
+    const unitCost = Number(mat.effective_unit_cost ?? mat.legacy_cost ?? 0);
+    const row = { job_id: id, material_id: mat.id, mat_name: mat.name, mat_spec: mat.spec, unit: mat.unit, unit_cost: unitCost, qty: parseFloat(matForm.qty) };
     const { data, error } = await supabase.from('wes_job_materials').insert(row).select().single();
     setSaving(p => ({ ...p, mat: false }));
     if (error) return setError(error.message);
@@ -115,11 +126,12 @@ export default function JobDetail() {
       status: 'draft',
     }).select().single();
     if (qErr) return alert(qErr.message);
+    const bq = Math.max(1, Number(job.build_quantity) || 1);
     const qlines = [];
     let order = 0;
-    items.forEach(m => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'material', description: (m.mat_name + ' ' + m.mat_spec).trim(), qty: m.qty, unit: m.unit, unit_price: m.unit_cost }));
-    labor.forEach(l => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'labor', description: l.description, qty: l.hours, unit: 'hr', unit_price: l.rate }));
-    components.forEach(c => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'component', description: c.description, qty: c.qty, unit: 'ea', unit_price: c.unit_cost }));
+    items.forEach(m => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'material', description: (m.mat_name + ' ' + m.mat_spec).trim(), qty: Number(m.qty) * bq, unit: m.unit, unit_price: m.unit_cost }));
+    labor.forEach(l => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'labor', description: l.description, qty: Number(l.hours) * bq, unit: 'hr', unit_price: l.rate }));
+    components.forEach(c => qlines.push({ quote_id: q.id, sort_order: order++, item_type: 'component', description: c.description, qty: Number(c.qty) * bq, unit: 'ea', unit_price: c.unit_cost }));
     if (qlines.length) await supabase.from('wes_quote_lines').insert(qlines);
     router.push('/quotes/' + q.id);
   }
@@ -143,17 +155,31 @@ export default function JobDetail() {
         </div>
         <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
           <button onClick={createQuote} style={{ alignSelf: 'flex-end' }}>→ Create quote</button>
-          <div>
-          <label style={{ display: 'block', marginBottom: 5 }}>Sell price</label>
-          <input
-            type="number"
-            step="0.01"
-            value={sellPrice}
-            onChange={e => setSellPrice(e.target.value)}
-            onBlur={e => updateSellPrice(e.target.value)}
-            placeholder="0.00"
-            style={{ width: 160, textAlign: 'right' }}
-          />
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: 5 }}>Build qty</label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                value={buildQty}
+                onChange={e => setJob(prev => ({ ...prev, build_quantity: parseInt(e.target.value, 10) || 1 }))}
+                onBlur={e => updateBuildQuantity(e.target.value)}
+                style={{ width: 80, textAlign: 'right' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: 5 }}>Sell price</label>
+              <input
+                type="number"
+                step="0.01"
+                value={sellPrice}
+                onChange={e => setSellPrice(e.target.value)}
+                onBlur={e => updateSellPrice(e.target.value)}
+                placeholder="0.00"
+                style={{ width: 160, textAlign: 'right' }}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -164,18 +190,22 @@ export default function JobDetail() {
         <div className="metric">
           <div className="label">Material</div>
           <div className="value">{fmt(matTotal)}</div>
+          {buildQty > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{fmt(matPerBuild)} × {buildQty}</div>}
         </div>
         <div className="metric">
           <div className="label">Labor</div>
           <div className="value">{fmt(laborTotal)}</div>
+          {buildQty > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{fmt(laborPerBuild)} × {buildQty}</div>}
         </div>
         <div className="metric">
           <div className="label">Components</div>
           <div className="value">{fmt(compTotal)}</div>
+          {buildQty > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>{fmt(compPerBuild)} × {buildQty}</div>}
         </div>
         <div className="metric">
           <div className="label">Total cost</div>
           <div className="value" style={{ color: 'var(--accent)' }}>{fmt(total)}</div>
+          {buildQty > 1 && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>for {buildQty} units</div>}
         </div>
       </div>
 
@@ -201,7 +231,7 @@ export default function JobDetail() {
               <select value={matForm.material_id} onChange={e => setMatForm(p => ({ ...p, material_id: e.target.value }))}>
                 <option value="">Select material...</option>
                 {materials.map(m => (
-                  <option key={m.id} value={m.id}>{m.name} {m.spec} — {fmt(m.cost)}/{m.unit}</option>
+                  <option key={m.id} value={m.id}>{m.name} {m.spec} — {fmt(m.effective_unit_cost)}/{m.unit}</option>
                 ))}
               </select>
             </div>
@@ -217,7 +247,7 @@ export default function JobDetail() {
             </div>
             {selectedMat && matForm.qty && (
               <div style={{ width: 100, padding: '8px 0', color: 'var(--text2)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                = {fmt(parseFloat(matForm.qty) * selectedMat.cost)}
+                = {fmt(parseFloat(matForm.qty) * Number(selectedMat.effective_unit_cost || 0))}
               </div>
             )}
             <button type="submit" className="primary" disabled={saving.mat}>{saving.mat ? '...' : 'Add'}</button>
@@ -248,8 +278,12 @@ export default function JobDetail() {
                 </tr>
               ))}
               <tr style={{ background: 'var(--surface2)' }}>
-                <td colSpan={4} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>Subtotal</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{fmt(matTotal)}</td>
+                <td colSpan={4} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>
+                  {buildQty > 1 ? `Per-build subtotal × ${buildQty}` : 'Subtotal'}
+                </td>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                  {buildQty > 1 ? `${fmt(matPerBuild)} → ${fmt(matTotal)}` : fmt(matTotal)}
+                </td>
                 <td></td>
               </tr>
             </tbody>
@@ -301,8 +335,12 @@ export default function JobDetail() {
                 </tr>
               ))}
               <tr style={{ background: 'var(--surface2)' }}>
-                <td colSpan={3} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>Subtotal</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{fmt(laborTotal)}</td>
+                <td colSpan={3} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>
+                  {buildQty > 1 ? `Per-build subtotal × ${buildQty}` : 'Subtotal'}
+                </td>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                  {buildQty > 1 ? `${fmt(laborPerBuild)} → ${fmt(laborTotal)}` : fmt(laborTotal)}
+                </td>
                 <td></td>
               </tr>
             </tbody>
@@ -357,8 +395,12 @@ export default function JobDetail() {
                 </tr>
               ))}
               <tr style={{ background: 'var(--surface2)' }}>
-                <td colSpan={3} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>Subtotal</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{fmt(compTotal)}</td>
+                <td colSpan={3} style={{ textAlign: 'right', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text2)' }}>
+                  {buildQty > 1 ? `Per-build subtotal × ${buildQty}` : 'Subtotal'}
+                </td>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                  {buildQty > 1 ? `${fmt(compPerBuild)} → ${fmt(compTotal)}` : fmt(compTotal)}
+                </td>
                 <td></td>
               </tr>
             </tbody>

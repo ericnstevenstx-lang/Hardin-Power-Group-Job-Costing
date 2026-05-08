@@ -9,9 +9,10 @@ function fmt(n) {
 }
 
 function calcTotals(job) {
-  const mat = (job.wes_job_materials || []).reduce((s, i) => s + i.qty * i.unit_cost, 0);
-  const labor = (job.wes_job_labor || []).reduce((s, l) => s + l.hours * l.rate, 0);
-  const comp = (job.wes_job_components || []).reduce((s, c) => s + c.qty * c.unit_cost, 0);
+  const bq = Math.max(1, Number(job.build_quantity) || 1);
+  const mat = (job.wes_job_materials || []).reduce((s, i) => s + i.qty * i.unit_cost, 0) * bq;
+  const labor = (job.wes_job_labor || []).reduce((s, l) => s + l.hours * l.rate, 0) * bq;
+  const comp = (job.wes_job_components || []).reduce((s, c) => s + c.qty * c.unit_cost, 0) * bq;
   const total = mat + labor + comp;
   const margin = job.sell_price > 0 ? ((job.sell_price - total) / job.sell_price * 100) : null;
   return { mat, labor, comp, total, margin };
