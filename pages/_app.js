@@ -67,6 +67,7 @@ export default function App({ Component, pageProps }) {
             <NavLink href="/intake">Drawing intake</NavLink>
             <NavLink href="/templates">Templates</NavLink>
             <NavLink href="/materials">Materials</NavLink>
+            <NavLink href="/vendors">Vendors</NavLink>
           </nav>
 
           <div style={{ fontSize: 10, color: 'var(--text3)', letterSpacing: '0.06em', flexShrink: 0 }}>

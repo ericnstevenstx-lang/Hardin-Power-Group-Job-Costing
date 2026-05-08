@@ -83,6 +83,7 @@ export default function DrawingIntakePage() {
   const [jobName, setJobName] = useState('');
   const [jobCustomer, setJobCustomer] = useState('');
   const [poNumber, setPoNumber] = useState('');
+  const [buildQuantity, setBuildQuantity] = useState(1);
   const [creating, setCreating] = useState(false);
   const [notes, setNotes] = useState('');
 
@@ -242,10 +243,15 @@ export default function DrawingIntakePage() {
     setCompForm(p => ({ ...p, description: desc }));
   }
 
-  const matTotal = editBom.reduce((s, l) => s + (l.qty * l.unit_cost || 0), 0);
-  const laborCost = (result?.labor_hours || 0) * 30;
-  const consumablesCost = (result?.labor_hours || 0) * 5;
-  const compTotal = components.reduce((s, c) => s + (c.qty * c.unit_cost || 0), 0);
+  const bq = Math.max(1, Number(buildQuantity) || 1);
+  const matTotalPerBuild = editBom.reduce((s, l) => s + (l.qty * l.unit_cost || 0), 0);
+  const laborCostPerBuild = (result?.labor_hours || 0) * 30;
+  const consumablesCostPerBuild = (result?.labor_hours || 0) * 5;
+  const compTotalPerBuild = components.reduce((s, c) => s + (c.qty * c.unit_cost || 0), 0);
+  const matTotal = matTotalPerBuild * bq;
+  const laborCost = laborCostPerBuild * bq;
+  const consumablesCost = consumablesCostPerBuild * bq;
+  const compTotal = compTotalPerBuild * bq;
   const grandTotal = matTotal + laborCost + consumablesCost + compTotal;
   const confidenceColor = result ? (result.confidence >= 0.8 ? 'var(--color-text-success)' : result.confidence >= 0.5 ? 'var(--color-text-warning)' : 'var(--color-text-danger)') : '';
 
@@ -269,6 +275,7 @@ export default function DrawingIntakePage() {
           raw_extraction: result || {},
           confirmed_bom: editBom,
           status: 'confirmed',
+          build_quantity: bq,
         }).select().single();
         intakeId = intake?.id || null;
       } catch (_) {}
@@ -278,6 +285,7 @@ export default function DrawingIntakePage() {
         customer: jobCustomer.trim(),
         date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }),
         sell_price: 0,
+        build_quantity: bq,
       }).select().single();
 
       if (jobErr) throw new Error(jobErr.message);
@@ -349,18 +357,19 @@ export default function DrawingIntakePage() {
         <h2>HARDIN POWER GROUP — BOM EXTRACT</h2>
         <div className="ph">3030 Hansboro Ave, Dallas TX 75233 | 469-362-9792 x1014</div>
         <div style={{ fontSize: 11, marginBottom: 2 }}><strong>Customer:</strong> {jobCustomer || '—'} &nbsp;|&nbsp; <strong>PO / Estimate #:</strong> {poNumber || '—'}</div>
-        <div style={{ fontSize: 11, marginBottom: 4 }}><strong>Job:</strong> {jobName || '—'} &nbsp;|&nbsp; <strong>Product:</strong> {PRODUCT_LABELS[productType]} &nbsp;|&nbsp; <strong>Date:</strong> {new Date().toLocaleDateString()}</div>
+        <div style={{ fontSize: 11, marginBottom: 4 }}><strong>Job:</strong> {jobName || '—'} &nbsp;|&nbsp; <strong>Product:</strong> {PRODUCT_LABELS[productType]} &nbsp;|&nbsp; <strong>Build qty:</strong> {bq} &nbsp;|&nbsp; <strong>Date:</strong> {new Date().toLocaleDateString()}</div>
         <table>
-          <thead><tr><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Unit $</th><th>Line $</th></tr></thead>
+          <thead><tr><th>Material</th><th>Spec</th><th>Qty/build</th><th>Total qty</th><th>Unit</th><th>Unit $</th><th>Line $</th></tr></thead>
           <tbody>
             {editBom.map((r, i) => (
               <tr key={i}>
                 <td>{r.mat_name}</td>
                 <td>{r.mat_spec}</td>
                 <td>{Number(r.qty).toFixed(2)}</td>
+                <td>{(Number(r.qty) * bq).toFixed(2)}</td>
                 <td>{r.unit}</td>
                 <td>${Number(r.unit_cost).toFixed(2)}</td>
-                <td>${Number(r.line_total).toFixed(2)}</td>
+                <td>${(Number(r.qty) * Number(r.unit_cost) * bq).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -368,23 +377,24 @@ export default function DrawingIntakePage() {
         {components.length > 0 && <>
           <div style={{ fontSize: 10, fontWeight: 600, margin: '10px 0 4px', borderTop: '1px solid #000', paddingTop: 6 }}>COMPONENTS / ELECTRICAL / MISC</div>
           <table>
-            <thead><tr><th>Description</th><th>Qty</th><th>Unit $</th><th>Line $</th></tr></thead>
+            <thead><tr><th>Description</th><th>Qty/build</th><th>Total qty</th><th>Unit $</th><th>Line $</th></tr></thead>
             <tbody>
               {components.map((r, i) => (
                 <tr key={i}>
                   <td>{r.description}</td>
                   <td>{Number(r.qty)}</td>
+                  <td>{Number(r.qty) * bq}</td>
                   <td>${Number(r.unit_cost).toFixed(2)}</td>
-                  <td>${(Number(r.qty) * Number(r.unit_cost)).toFixed(2)}</td>
+                  <td>${(Number(r.qty) * Number(r.unit_cost) * bq).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </>}
         <div className="total">
-          FRAME MATERIAL: ${editBom.reduce((s, r) => s + Number(r.line_total || 0), 0).toFixed(2)}
-          {components.length > 0 && <> &nbsp;|&nbsp; COMPONENTS: ${components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0).toFixed(2)}</>}
-          &nbsp;|&nbsp; TOTAL: ${(editBom.reduce((s, r) => s + Number(r.line_total || 0), 0) + components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0)).toFixed(2)}
+          FRAME MATERIAL: ${(editBom.reduce((s, r) => s + Number(r.line_total || 0), 0) * bq).toFixed(2)}
+          {components.length > 0 && <> &nbsp;|&nbsp; COMPONENTS: ${(components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0) * bq).toFixed(2)}</>}
+          &nbsp;|&nbsp; TOTAL ({bq} unit{bq !== 1 ? 's' : ''}): ${((editBom.reduce((s, r) => s + Number(r.line_total || 0), 0) + components.reduce((s, r) => s + (Number(r.qty) * Number(r.unit_cost)), 0)) * bq).toFixed(2)}
         </div>
         <div className="footer">Generated by HPG Job Costing — Internal use only | Printed {new Date().toLocaleString()}</div>
       </div>
@@ -462,15 +472,21 @@ export default function DrawingIntakePage() {
               </tbody>
               <tfoot>
                 <tr style={{ background: 'var(--color-background-secondary)' }}>
-                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Frame material subtotal</td>
+                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    {bq > 1 ? `Frame material × ${bq} units` : 'Frame material subtotal'}
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(matTotal)}</td><td></td>
                 </tr>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Labor ({result.labor_hours}hr @ $30)</td>
+                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Labor ({(result.labor_hours || 0) * bq}hr @ $30){bq > 1 ? ` (${result.labor_hours}hr × ${bq})` : ''}
+                  </td>
                   <td style={{ textAlign: 'right' }}>{fmt(laborCost)}</td><td></td>
                 </tr>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Consumables ({result.labor_hours}hr @ $5)</td>
+                  <td colSpan={5} style={{ textAlign: 'right', fontSize: 11, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Consumables ({(result.labor_hours || 0) * bq}hr @ $5)
+                  </td>
                   <td style={{ textAlign: 'right' }}>{fmt(consumablesCost)}</td><td></td>
                 </tr>
               </tfoot>
@@ -525,12 +541,15 @@ export default function DrawingIntakePage() {
 
           <div className="card" style={{ marginBottom: 20, background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-secondary)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>Total job cost</span>
+              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500 }}>
+                {bq > 1 ? `Total job cost (${bq} units)` : 'Total job cost'}
+              </span>
               <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-warning)' }}>{fmt(grandTotal)}</span>
             </div>
             <div style={{ display: 'flex', gap: 24, marginTop: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
               <span>Frame: {fmt(matTotal + laborCost + consumablesCost)}</span>
               <span>Components: {fmt(compTotal)}</span>
+              {bq > 1 && <span>Per unit: {fmt(grandTotal / bq)}</span>}
             </div>
           </div>
 
@@ -540,6 +559,10 @@ export default function DrawingIntakePage() {
               <div><label>Job name</label><input value={jobName} onChange={e => setJobName(e.target.value)} placeholder="e.g. Temp Skid — Southland Industries" style={{ marginTop: 5 }} /></div>
               <div><label>Customer</label><input value={jobCustomer} onChange={e => setJobCustomer(e.target.value)} placeholder="Customer name" style={{ marginTop: 5 }} /></div>
               <div><label>PO / Estimate #</label><input value={poNumber} onChange={e => setPoNumber(e.target.value)} placeholder="e.g. PO-1234 or EST-2026-001" style={{ marginTop: 5 }} /></div>
+              <div>
+                <label>Build qty (units to produce)</label>
+                <input type="number" step="1" min="1" value={buildQuantity} onChange={e => setBuildQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))} style={{ marginTop: 5 }} />
+              </div>
             </div>
             <div style={{ marginBottom: 16 }}>
               <label>Notes</label>
