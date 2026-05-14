@@ -1,5 +1,5 @@
 const SYSTEM_PROMPT = `You are a fabrication BOM extraction engine for Hardin Power Group, Dallas TX.
-You will be shown a stitched image of multiple pages from a technical drawing — page 1 (assembly + BOM table) followed by pages 3, 4, 5 (individual part detail drawings with dimensions). Read ALL pages to extract the complete cut list before calculating any quantities.
+You will be shown a stitched image of multiple pages from a technical drawing — page 1 (assembly + parts list table) followed by pages 3, 4, 5 (individual part detail drawings with dimensions). Read ALL pages to extract the complete cut list before calculating any quantities.
 
 Product types: Spider Box Rack | Charging Station Frame | Temp Power Skid Frame | A-Frame Panel Mount
 
@@ -7,6 +7,7 @@ Return ONLY valid JSON in this exact structure:
 {
   "product_type": "spider-box" | "charging-station" | "temp-skid" | "a-frame",
   "confidence": 0.0-1.0,
+  "build_quantity": 1,
   "dimensions": {
     "description": "brief summary",
     "members": [
@@ -29,6 +30,27 @@ Return ONLY valid JSON in this exact structure:
   "warnings": []
 }
 
+=== STEP 0: IDENTIFY PRODUCT TYPE FROM PARTS LIST ===
+Look at the parts list table on page 1. Find the part number column.
+Map the prefix to product_type:
+- TPS-* → "temp-skid"
+- CS-* or CHG-* → "charging-station"
+- SBR-* → "spider-box"
+- AFP-* → "a-frame"
+
+If no part numbers are visible, fall back to geometry: vertical rack with multiple horizontal shelves = spider-box, low horizontal frame with fork pockets + casters = temp-skid or charging-station (charging-station has integrated sheet metal panels, temp-skid does not), A-frame profile = a-frame.
+
+The user may have pre-selected a product type in the UI. TRUST THE DRAWING, NOT THE UI. If the drawing's part number prefix disagrees with the user's selection, return the correct product_type and add a warning like "Product type corrected from <user_guess> to <detected> based on TPS-* part numbers in parts list".
+
+=== STEP 0.5: TRANSCRIBE THE PARTS LIST TABLE ===
+Before doing any calculation, read the parts list table on page 1 row by row.
+For each row, capture: item number, qty, part number, description, material.
+This is the source of truth for what materials and hardware to include.
+The detail pages (3, 4, 5) provide cut lengths; the parts list provides qty and material spec.
+If the parts list and detail pages disagree on a spec, the parts list wins — add a warning noting the discrepancy.
+
+Hardware items in the parts list (eyebolts, flange nuts, casters, etc.) are transcribed directly with the qty shown. Do NOT assume counts from defaults.
+
 === STEP 1: READ THE CUT LIST ===
 Scan ALL pages. For every part number, record: qty, length in inches, total inches.
 List each part as a separate entry in dimensions.members with total_inches = qty * length_inches.
@@ -43,8 +65,11 @@ Sanity check ranges:
 - Charging station SQ tube: 90-130 ft total
 - A-frame small skid SQ tube: 25-40 ft total
 - A-frame large panel mount SQ tube: 65-85 ft total
-- Temp skid SQ tube: 40-80 ft total
-- Fork rails (rec tube): almost always 2 pieces at 36-50" = 6-8.5 ft
+- Temp skid 2x2 11GA tube: 40-65 ft total
+- Temp skid 2x2 14GA tube: 10-25 ft total (shelf rails, secondary members)
+- Fork rails (rec tube): almost always 2 pieces at 28-50" = 5-8.5 ft
+
+When a temp skid has both 11GA and 14GA 2x2 tube, create TWO separate BOM lines (one per gauge). Use $4.00/ft for both rates and note the gauge in mat_spec.
 
 === STEP 3: SHEET METAL PRICING ===
 Sheet metal is priced by WEIGHT, not by piece. Use these formulas:
@@ -75,11 +100,15 @@ EXAMPLE — 10 GA panels:
 
 Always create a separate BOM line for each gauge of sheet steel found in the drawing.
 
+=== STEP 4: BUILD QUANTITY ===
+Look in the customer notes section on page 1 for a "QTY: N EA" line or similar.
+Set build_quantity to N. If not stated, set build_quantity to 1.
+
 === MATERIAL RATES ===
 - SQ Tube 1" x 1" 11GA: $1.90/ft (Dimco Steel verified 04/10/26)
 - SQ Tube 1-1/4" x 1-1/4": $2.50/ft
 - SQ Tube 1-1/2" x 1-1/2" 11GA: $2.99/ft (Dimco Steel verified 04/03/26)
-- SQ Tube 2" x 2": $4.00/ft
+- SQ Tube 2" x 2": $4.00/ft (use for both 11GA .120 wall and 14GA .083 wall)
 - Rec Tube 6x3 11GA: $9.32/ft
 - Sheet Steel 10 GA: $0.95/lb (Dimco Steel verified 04/14/26, $95.00/cwt) — weight formula: area_sq_in * 0.0382 lb/sq_in
 - Sheet Steel 11 GA: $0.95/lb — weight formula: area_sq_in * 0.0339 lb/sq_in
@@ -99,14 +128,19 @@ Always create a separate BOM line for each gauge of sheet steel found in the dra
 - 5/16 Flat Washer USS ZP: $0.0600/ea
 - 5/16-18 Hex Nut GR2 ZP: $0.0575/ea
 
-=== CASTER HARDWARE RULE ===
-For every caster add 4 sets of 5/16 hardware (bolt + lockwasher + flat washer + nut = $0.4251/set).
-4 casters = 16 sets. Add four separate BOM lines with source "caster hardware rule".
+=== HARDWARE RULES ===
+Major hardware shown in the parts list table (eyebolts, flange nuts, casters, lifting eyes) is TRANSCRIBED DIRECTLY to BOM lines using the qty column. Do not derive these counts from defaults or product-type rules.
 
-=== PRODUCT DEFAULTS (only if dims missing) ===
+For caster MOUNTING bolts only (which are typically NOT in the parts list):
+Add 4 sets of 5/16 hardware per caster (bolt + lockwasher + flat washer + nut = $0.4251/set total).
+4 casters total = 16 sets, expressed as four separate BOM lines.
+Source: "caster mounting hardware rule".
+
+=== PRODUCT DEFAULTS (use ONLY if parts list is missing or unreadable) ===
+If the parts list table is visible, IGNORE these defaults entirely and itemize from the table.
 SPIDER BOX: 23ft 1.5" tube, 2 swivel, 2 rigid casters, 0.5lb powder coat, 5hr labor.
 CHARGING STATION: See cut list — do not use defaults if sheets 3-5 are visible.
-TEMP SKID: 2"x2" all members, 6x3 rec tube fork pockets, 4 swivel, 4 rigid casters, 12hr labor.
+TEMP SKID: 2"x2" all members, 6x3 rec tube fork pockets, 2 swivel, 2 rigid casters, 0.5lb powder coat, 12hr labor.
 A-FRAME SMALL (HOM): 1-1/4" tube, 6.0 ft rec tube (2x36"), 2 lifting eyes, 6hr labor.
 A-FRAME LARGE: 2"x2" tube, 10hr labor.
 
@@ -148,7 +182,7 @@ export default async function handler(req, res) {
           role: 'user',
           content: [
             contentBlock,
-            { type: 'text', text: 'This image contains multiple PDF pages stitched vertically. Page 1 is at the top (assembly view + part list). Pages 3, 4, 5 follow below (individual part dimensions). Read ALL pages. Extract the complete BOM for this ' + productLabel + ' including all sheet metal. Show every part in dimensions.members. Return only the JSON.' }
+            { type: 'text', text: 'This image contains multiple PDF pages stitched vertically. Page 1 is at the top (assembly view + parts list table). Pages 3, 4, 5 follow below (individual part dimensions). Read ALL pages.\n\nThe user pre-selected "' + productLabel + '" in the UI as their initial guess. Treat this as a hint only. TRUST THE DRAWING. If the parts list shows different part number prefixes, return the correct product_type and add a note in warnings explaining the override.\n\nFollow STEP 0 through STEP 4 in order. Transcribe the parts list table first, then walk the cut list on the detail pages. Return only the JSON.' }
           ]
         }]
       })
