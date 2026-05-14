@@ -208,6 +208,9 @@ export default function DrawingIntakePage() {
       setResult(parsed);
       setEditBom(parsed.bom || []);
       if (parsed.product_type) setProductType(parsed.product_type);
+      if (parsed.build_quantity && Number.isFinite(parsed.build_quantity)) {
+        setBuildQuantity(Math.max(1, parseInt(parsed.build_quantity, 10) || 1));
+      }
       setJobName(`${PRODUCT_LABELS[parsed.product_type || productType]} — ${new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'})}`);
     } catch (err) {
       setError('Parse failed: ' + err.message);
